@@ -2,6 +2,8 @@
 
 这是一个面向个人使用的静态 PWA。所有日常数据默认保存在当前浏览器的 `localStorage` 中，不需要账号或数据库。
 
+正式访问地址：<https://chenhonesty.github.io/home-evening-planner/>
+
 ## 已实现
 
 - 依据精力、跳舞/加班、用餐状态生成晚间计划
