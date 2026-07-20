@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="description" content="为晚归生活生成不过载的晚间计划，并管理家务、家庭物品和采购。">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="今晚做什么">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <title>今晚做什么</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div>
+        <p id="today-label" class="eyebrow">今天</p>
+        <h1>今晚做什么</h1>
+        <p class="subtitle">少做一点，但把真正重要的事情做掉。</p>
+      </div>
+      <span id="save-status" class="status-chip" aria-live="polite">已保存在本机</span>
+    </header>
+
+    <aside id="install-banner" class="install-banner" hidden>
+      <div>
+        <strong>安装到手机桌面</strong>
+        <p id="install-hint">安装后可全屏和离线打开。</p>
+      </div>
+      <div class="inline-actions">
+        <button id="install-button" class="button primary" type="button">安装</button>
+        <button id="dismiss-install" class="button ghost" type="button">稍后</button>
+      </div>
+    </aside>
+
+    <nav class="main-nav" aria-label="主功能">
+      <button class="nav-button active" type="button" data-view-button="tonight" aria-current="page">今晚</button>
+      <button class="nav-button" type="button" data-view-button="tasks">任务</button>
+      <button class="nav-button" type="button" data-view-button="home">我的家</button>
+      <button class="nav-button" type="button" data-view-button="shopping">采购</button>
+      <button class="nav-button" type="button" data-view-button="review">回顾</button>
+    </nav>
+
+    <main>
+      <section class="view" data-view="tonight">
+        <div class="section-heading">
+          <div>
+            <h2>生成今晚计划</h2>
+            <p>限时游戏优先放在 23:00 前，家务和跳舞结束后再洗澡。</p>
+          </div>
+        </div>
+
+        <div class="control-grid">
+          <label>精力
+            <select id="energy-select">
+              <option value="low">低</option>
+              <option value="medium" selected>中</option>
+              <option value="high">高</option>
+            </select>
+          </label>
+          <label>临时安排
+            <select id="special-select">
+              <option value="none">没有</option>
+              <option value="dance">跳舞 60 分钟</option>
+              <option value="overtime">加班 90 分钟</option>
+              <option value="dance_overtime">跳舞 60 分钟 + 加班 45 分钟</option>
+            </select>
+          </label>
+          <label>在家用餐
+            <select id="meal-select">
+              <option value="none">没有使用碗筷</option>
+              <option value="dishes">使用了碗筷</option>
+              <option value="cooked">做饭并使用了碗筷</option>
+            </select>
+          </label>
+        </div>
+
+        <fieldset class="mode-fieldset">
+          <legend>额外家务上限</legend>
+          <div class="mode-grid">
+            <label class="mode-option"><input type="radio" name="mode" value="rest"><span>不做额外家务<small>0 分钟</small></span></label>
+            <label class="mode-option"><input type="radio" name="mode" value="minimum"><span>最低维持<small>10 分钟</small></span></label>
+            <label class="mode-option"><input type="radio" name="mode" value="balanced" checked><span>平衡<small>20 分钟</small></span></label>
+            <label class="mode-option"><input type="radio" name="mode" value="focus"><span>集中处理<small>50 分钟</small></span></label>
+          </div>
+        </fieldset>
+
+        <button id="generate-plan" class="button primary block" type="button">生成今晚计划</button>
+
+        <div class="summary-grid" aria-label="今晚摘要">
+          <article class="summary-card"><span>计划家务</span><strong id="summary-chores">20 分钟</strong></article>
+          <article class="summary-card"><span>自由时间</span><strong id="summary-free">100 分钟</strong></article>
+          <article class="summary-card"><span>洗澡时间</span><strong id="summary-shower">23:15</strong></article>
+        </div>
+
+        <section class="panel">
+          <div class="section-heading compact">
+            <div>
+              <h2 id="plan-title">平衡计划</h2>
+              <p id="plan-note">限时游戏在 22:55 前完成。</p>
+            </div>
+            <span id="plan-progress" class="status-chip">0 / 7</span>
+          </div>
+          <div id="plan-list" class="list" aria-live="polite"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-heading compact">
+            <div>
+              <h2>洗涤天气建议</h2>
+              <p>输入城市后查询未来七天，推荐低降水且有充足晾晒时间的日期。</p>
+            </div>
+            <span id="weather-source" class="status-chip">尚未查询</span>
+          </div>
+          <form id="weather-form" class="inline-form">
+            <label class="grow">所在城市
+              <input id="city-input" type="text" autocomplete="address-level2" placeholder="例如：上海" required>
+            </label>
+            <button class="button" type="submit">查询天气</button>
+          </form>
+          <div id="weather-content" class="weather-content" aria-live="polite">
+            <p class="empty-state">天气数据会保存在本机；离线时显示上次查询结果。</p>
+          </div>
+        </section>
+      </section>
+
+      <section class="view" data-view="tasks" hidden>
+        <div class="section-heading">
+          <div><h2>任务与整理项目</h2><p>固定周期、完成后周期和事件触发分别管理。</p></div>
+        </div>
+        <div id="task-list" class="list"></div>
+
+        <details class="panel form-panel">
+          <summary>新增家务任务</summary>
+          <form id="task-form" class="form-grid">
+            <label>任务名称<input id="task-name" type="text" required placeholder="例如：清理洗手台"></label>
+            <label>预计耗时<select id="task-duration"><option value="5">5 分钟</option><option value="10" selected>10 分钟</option><option value="15">15 分钟</option><option value="25">25 分钟</option></select></label>
+            <label>触发方式<select id="task-trigger"><option value="weekly">每周一次</option><option value="daily">每天</option><option value="after14">完成后 14 天</option><option value="after30">完成后 30 天</option><option value="event">事件触发</option></select></label>
+            <label>所需精力<select id="task-energy"><option value="low">低</option><option value="medium" selected>中</option><option value="high">高</option></select></label>
+            <button class="button primary" type="submit">保存任务</button>
+          </form>
+        </details>
+
+        <section class="panel">
+          <div class="section-heading compact"><div><h2>整理项目：书桌</h2><p id="project-meta">把 55 分钟的大任务拆成 5 步。</p></div><span id="project-progress" class="status-chip">0 / 5</span></div>
+          <div class="progress-track"><span id="project-progress-bar"></span></div>
+          <div id="project-next" class="project-next"></div>
+        </section>
+      </section>
+
+      <section class="view" data-view="home" hidden>
+        <div class="section-heading"><div><h2>我的家</h2><p>按区域记录状态，只追踪重要或经常找不到的物品。</p></div></div>
+
+        <section class="panel">
+          <div class="section-heading compact"><div><h2>碗筷流程</h2><p>只有使用碗筷后才触发，完全干燥后再入柜。</p></div></div>
+          <div id="dish-state-buttons" class="state-grid" role="group" aria-label="碗筷状态"></div>
+          <p id="dish-guidance" class="helper-text"></p>
+        </section>
+
+        <section class="panel">
+          <div class="section-heading compact"><div><h2>东西在哪里</h2><p>支持按物品名称快速查询。</p></div></div>
+          <form id="item-search-form" class="inline-form">
+            <label class="grow">物品名称<input id="item-search" type="search" placeholder="电池、洗衣液、面霜"></label>
+            <button class="button" type="submit">查找</button>
+          </form>
+          <p id="item-search-result" class="search-result" aria-live="polite">还没有开始查找。</p>
+        </section>
+
+        <div id="area-list" class="area-grid"></div>
+      </section>
+
+      <section class="view" data-view="shopping" hidden>
+        <div class="section-heading"><div><h2>采购与库存</h2><p>只记录状态，不要求精确到毫升。</p></div></div>
+        <div id="inventory-list" class="list"></div>
+
+        <details class="panel form-panel">
+          <summary>新增库存物品</summary>
+          <form id="inventory-form" class="form-grid">
+            <label>名称<input id="inventory-name" type="text" required placeholder="例如：洗发水"></label>
+            <label>位置<input id="inventory-location" type="text" required placeholder="例如：卫生间镜柜中层"></label>
+            <label>库存状态<select id="inventory-status"><option value="full">充足</option><option value="normal">一般</option><option value="low">快用完</option></select></label>
+            <label>未开封数量<input id="inventory-unopened" type="number" min="0" value="0"></label>
+            <button class="button primary" type="submit">保存物品</button>
+          </form>
+        </details>
+
+        <details class="panel form-panel">
+          <summary>快速记一笔家庭采购</summary>
+          <form id="purchase-form" class="form-grid">
+            <label>买了什么<input id="purchase-name" type="text" required></label>
+            <label>金额<input id="purchase-amount" type="number" min="0" step="0.01" required></label>
+            <label>分类<select id="purchase-category"><option>洗护</option><option>清洁</option><option>保健品</option><option>食品</option><option>其他日用</option></select></label>
+            <button class="button primary" type="submit">保存购买记录</button>
+          </form>
+        </details>
+        <section class="panel">
+          <div class="section-heading compact"><div><h2>最近购买</h2><p id="purchase-total">本月已记录 ¥0.00</p></div></div>
+          <div id="purchase-list" class="list"></div>
+        </section>
+      </section>
+
+      <section class="view" data-view="review" hidden>
+        <div class="section-heading"><div><h2>周末 30 分钟回顾</h2><p>清延期、看库存、补购买记录、调整规则。</p></div></div>
+        <section class="panel">
+          <div class="section-heading compact"><h2>维护清单</h2><span id="review-remaining" class="status-chip">剩余 30 分钟</span></div>
+          <div id="review-checklist" class="check-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-heading compact"><div><h2>数据与安装</h2><p>数据默认只保存在这个浏览器中。</p></div></div>
+          <div class="button-grid">
+            <button id="export-data" class="button" type="button">导出 JSON 备份</button>
+            <label class="button file-button">导入 JSON<input id="import-data" type="file" accept="application/json,.json"></label>
+            <button id="show-install-help" class="button" type="button">查看安装方法</button>
+            <button id="reset-data" class="button danger" type="button">重置全部数据</button>
+          </div>
+          <p id="data-message" class="helper-text" aria-live="polite"></p>
+        </section>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <span>数据保存在当前设备</span>
+      <span id="offline-status">正在检查离线能力</span>
+    </footer>
+  </div>
+
+  <dialog id="install-dialog">
+    <form method="dialog">
+      <h2>安装到 iPhone</h2>
+      <ol>
+        <li>使用 Safari 打开当前网址。</li>
+        <li>点击底部的“分享”按钮。</li>
+        <li>选择“添加到主屏幕”。</li>
+        <li>从桌面打开后即可像 App 一样使用。</li>
+      </ol>
+      <p>安装和离线能力需要通过 HTTPS 或本机开发地址访问。</p>
+      <button class="button primary block" value="close">知道了</button>
+    </form>
+  </dialog>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>
