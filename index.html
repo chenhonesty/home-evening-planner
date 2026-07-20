@@ -205,14 +205,18 @@
         <div class="section-heading"><div><h2>采购与库存</h2><p>只记录状态，不要求精确到毫升。</p></div></div>
         <div id="inventory-list" class="list"></div>
 
-        <details class="panel form-panel">
-          <summary>新增库存物品</summary>
+        <details id="inventory-editor" class="panel form-panel">
+          <summary id="inventory-editor-title">新增或编辑库存物品</summary>
           <form id="inventory-form" class="form-grid">
+            <input id="inventory-editing-id" type="hidden">
             <label>名称<input id="inventory-name" type="text" required placeholder="例如：洗发水"></label>
             <label>位置<input id="inventory-location" type="text" required placeholder="例如：卫生间镜柜中层"></label>
             <label>库存状态<select id="inventory-status"><option value="full">充足</option><option value="normal">一般</option><option value="low">快用完</option></select></label>
             <label>未开封数量<input id="inventory-unopened" type="number" min="0" value="0"></label>
-            <button class="button primary" type="submit">保存物品</button>
+            <div class="form-actions">
+              <button id="inventory-cancel" class="button" type="button" hidden>取消编辑</button>
+              <button id="inventory-submit" class="button primary" type="submit">保存物品</button>
+            </div>
           </form>
         </details>
 

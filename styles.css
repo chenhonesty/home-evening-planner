@@ -199,6 +199,7 @@ input:focus, select:focus, button:focus-visible, summary:focus-visible { outline
 .form-panel summary { cursor: pointer; font-weight: 600; }
 .form-panel[open] summary { margin-bottom: 14px; }
 .form-grid .button { align-self: end; }
+.form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .quick-todos { display: flex; gap: 7px; flex-wrap: wrap; margin: 10px 0 6px; }
 .laundry-stages { display: grid; gap: 8px; margin-top: 10px; }
 .laundry-stage { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 9px 0; border-bottom: 1px solid var(--border); }

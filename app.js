@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'home-evening-pwa-state-v1';
-const APP_VERSION = 2;
+const APP_VERSION = 3;
+const DAY_ROLLOVER_HOUR = 4;
 
 const PROJECT_STEPS = [
   ['只清空书桌左侧 30 厘米', '10 分钟，只分成保留、丢弃、暂存三类'],
@@ -115,7 +116,9 @@ function cacheElements() {
     'task-form', 'task-name', 'task-duration', 'task-trigger', 'task-energy', 'project-progress',
     'project-progress-bar', 'project-next', 'project-meta', 'dish-state-buttons', 'dish-guidance',
     'item-search-form', 'item-search', 'item-search-result', 'area-list', 'inventory-list',
-    'inventory-form', 'inventory-name', 'inventory-location', 'inventory-status', 'inventory-unopened',
+    'inventory-editor', 'inventory-editor-title', 'inventory-form', 'inventory-editing-id',
+    'inventory-name', 'inventory-location', 'inventory-status', 'inventory-unopened',
+    'inventory-cancel', 'inventory-submit',
     'purchase-form', 'purchase-name', 'purchase-amount', 'purchase-category', 'purchase-total',
     'purchase-list', 'review-checklist', 'review-remaining', 'export-data', 'import-data',
     'reset-data', 'data-message', 'offline-status'
@@ -142,6 +145,7 @@ function bindEvents() {
   elements['item-search-form'].addEventListener('submit', searchItemLocation);
   elements['inventory-form'].addEventListener('submit', addInventoryItem);
   elements['inventory-list'].addEventListener('click', handleInventoryAction);
+  elements['inventory-cancel'].addEventListener('click', finishInventoryEdit);
   elements['purchase-form'].addEventListener('submit', addPurchase);
   elements['review-checklist'].addEventListener('change', handleReviewCheck);
   elements['export-data'].addEventListener('click', exportData);
@@ -164,8 +168,10 @@ function hydrateControls() {
 }
 
 function renderAll() {
-  const date = new Date();
-  elements['today-label'].textContent = new Intl.DateTimeFormat('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' }).format(date);
+  const date = planningDate();
+  const earlyMorning = new Date().getHours() < DAY_ROLLOVER_HOUR;
+  const dateText = new Intl.DateTimeFormat('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' }).format(date);
+  elements['today-label'].textContent = earlyMorning ? `${dateText} · 凌晨仍属于前一晚` : dateText;
   renderPlan();
   renderWeather();
   renderTasks();
@@ -656,27 +662,44 @@ function searchItemLocation(event) {
 }
 
 function renderInventory() {
-  elements['inventory-list'].innerHTML = state.inventory.map(item => `<article class="list-row"><div><div class="row-title">${escapeHtml(item.name)} <span class="status-chip">${inventoryStatusLabel(item.status)}</span></div><div class="row-meta">${escapeHtml(item.location)} · 未开封 ${item.unopened} 件${item.wishlist ? ' · 已加入待购' : ''}</div></div><div class="row-actions"><button class="button" type="button" data-inventory-cycle="${item.id}">更新状态</button><button class="button" type="button" data-inventory-wishlist="${item.id}">${item.wishlist ? '移出待购' : '加入待购'}</button></div></article>`).join('');
+  elements['inventory-list'].innerHTML = state.inventory.length
+    ? state.inventory.map(item => `<article class="list-row"><div><div class="row-title">${escapeHtml(item.name)} <span class="status-chip">${inventoryStatusLabel(item.status)}</span></div><div class="row-meta">${escapeHtml(item.location)} · 未开封 ${item.unopened} 件${item.wishlist ? ' · 已加入待购' : ''}</div></div><div class="row-actions"><button class="button" type="button" data-inventory-edit="${item.id}">编辑</button><button class="button" type="button" data-inventory-cycle="${item.id}">更新状态</button><button class="button" type="button" data-inventory-wishlist="${item.id}">${item.wishlist ? '移出待购' : '加入待购'}</button><button class="button" type="button" data-inventory-delete="${item.id}">删除</button></div></article>`).join('')
+    : '<p class="empty-state">还没有库存物品，可以在下方新增。</p>';
 }
 
 function addInventoryItem(event) {
   event.preventDefault();
-  state.inventory.push({
-    id: uid('inv'),
-    name: elements['inventory-name'].value.trim(),
-    location: elements['inventory-location'].value.trim(),
+  const editingId = elements['inventory-editing-id'].value;
+  const name = elements['inventory-name'].value.trim();
+  const location = elements['inventory-location'].value.trim();
+  const values = {
+    name,
+    location,
     status: elements['inventory-status'].value,
-    unopened: Number(elements['inventory-unopened'].value || 0),
-    wishlist: false
-  });
-  event.target.reset();
+    unopened: Number(elements['inventory-unopened'].value || 0)
+  };
+  if (editingId) {
+    const item = state.inventory.find(entry => entry.id === editingId);
+    if (item) {
+      if (item.name !== name) delete state.home.itemLocations[item.name];
+      Object.assign(item, values);
+    }
+  } else {
+    state.inventory.push({ id: uid('inv'), ...values, wishlist: false });
+  }
+  state.home.itemLocations[name] = location;
   saveState();
+  finishInventoryEdit();
   renderInventory();
+  flashSaveStatus(editingId ? '库存已修改' : '库存已新增');
 }
 
 function handleInventoryAction(event) {
+  const editButton = event.target.closest('[data-inventory-edit]');
   const cycleButton = event.target.closest('[data-inventory-cycle]');
   const wishlistButton = event.target.closest('[data-inventory-wishlist]');
+  const deleteButton = event.target.closest('[data-inventory-delete]');
+  if (editButton) startInventoryEdit(editButton.dataset.inventoryEdit);
   if (cycleButton) {
     const item = state.inventory.find(entry => entry.id === cycleButton.dataset.inventoryCycle);
     if (item) item.status = item.status === 'full' ? 'normal' : item.status === 'normal' ? 'low' : 'full';
@@ -685,15 +708,48 @@ function handleInventoryAction(event) {
     const item = state.inventory.find(entry => entry.id === wishlistButton.dataset.inventoryWishlist);
     if (item) item.wishlist = !item.wishlist;
   }
+  if (deleteButton) {
+    const item = state.inventory.find(entry => entry.id === deleteButton.dataset.inventoryDelete);
+    if (item && window.confirm(`确定删除“${item.name}”吗？`)) {
+      state.inventory = state.inventory.filter(entry => entry.id !== item.id);
+      delete state.home.itemLocations[item.name];
+      if (elements['inventory-editing-id'].value === item.id) finishInventoryEdit();
+    }
+  }
   saveState();
   renderInventory();
+}
+
+function startInventoryEdit(itemId) {
+  const item = state.inventory.find(entry => entry.id === itemId);
+  if (!item) return;
+  elements['inventory-editing-id'].value = item.id;
+  elements['inventory-name'].value = item.name;
+  elements['inventory-location'].value = item.location;
+  elements['inventory-status'].value = item.status;
+  elements['inventory-unopened'].value = String(item.unopened);
+  elements['inventory-editor-title'].textContent = `编辑：${item.name}`;
+  elements['inventory-submit'].textContent = '保存修改';
+  elements['inventory-cancel'].hidden = false;
+  elements['inventory-editor'].open = true;
+  elements['inventory-name'].focus();
+}
+
+function finishInventoryEdit() {
+  elements['inventory-form'].reset();
+  elements['inventory-editing-id'].value = '';
+  elements['inventory-unopened'].value = '0';
+  elements['inventory-editor-title'].textContent = '新增或编辑库存物品';
+  elements['inventory-submit'].textContent = '保存物品';
+  elements['inventory-cancel'].hidden = true;
+  elements['inventory-editor'].open = false;
 }
 
 function addPurchase(event) {
   event.preventDefault();
   state.purchases.unshift({
     id: uid('purchase'),
-    date: todayKey(),
+    date: calendarDayKey(),
     name: elements['purchase-name'].value.trim(),
     amount: Number(elements['purchase-amount'].value),
     category: elements['purchase-category'].value
@@ -704,7 +760,7 @@ function addPurchase(event) {
 }
 
 function renderPurchases() {
-  const currentMonth = todayKey().slice(0, 7);
+  const currentMonth = calendarDayKey().slice(0, 7);
   const total = state.purchases.filter(item => item.date.startsWith(currentMonth)).reduce((sum, item) => sum + item.amount, 0);
   elements['purchase-total'].textContent = `本月已记录 ¥${total.toFixed(2)}`;
   elements['purchase-list'].innerHTML = state.purchases.length
@@ -740,7 +796,7 @@ function exportData() {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `今晚做什么-备份-${todayKey()}.json`;
+  anchor.download = `今晚做什么-备份-${calendarDayKey()}.json`;
   anchor.click();
   URL.revokeObjectURL(url);
   elements['data-message'].textContent = '备份已导出。建议保存到 iCloud Drive。';
@@ -830,6 +886,9 @@ function mergeWithDefaults(saved) {
     merged.today.plan = [];
     merged.today.completedPlanIds = [];
   }
+  if (previousVersion < 3 && new Date().getHours() < DAY_ROLLOVER_HOUR && merged.today.date === calendarDayKey()) {
+    merged.today.date = todayKey();
+  }
   merged.version = APP_VERSION;
   return merged;
 }
@@ -902,13 +961,26 @@ function formatClock(offsetMinutes) {
   return `${String(Math.floor(absolute / 60)).padStart(2, '0')}:${String(absolute % 60).padStart(2, '0')}`;
 }
 
-function todayKey() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+function planningDate(now = new Date()) {
+  const shifted = new Date(now);
+  shifted.setHours(shifted.getHours() - DAY_ROLLOVER_HOUR);
+  return shifted;
+}
+
+function dateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function todayKey(now = new Date()) {
+  return dateKey(planningDate(now));
+}
+
+function calendarDayKey(now = new Date()) {
+  return dateKey(now);
 }
 
 function weekKey() {
-  const now = new Date();
+  const now = planningDate();
   const day = (now.getDay() + 6) % 7;
   const monday = new Date(now);
   monday.setDate(now.getDate() - day);
