@@ -1,5 +1,5 @@
 const STORAGE_KEY = 'home-evening-pwa-state-v1';
-const APP_VERSION = 1;
+const APP_VERSION = 2;
 
 const PROJECT_STEPS = [
   ['只清空书桌左侧 30 厘米', '10 分钟，只分成保留、丢弃、暂存三类'],
@@ -45,7 +45,10 @@ const DEFAULT_STATE = {
   today: {
     date: '',
     energy: 'medium',
-    special: 'none',
+    danceDuration: 0,
+    overtimeDuration: 0,
+    snackDuration: 0,
+    laundryTonight: false,
     meal: 'none',
     mode: 'balanced',
     plan: [],
@@ -58,6 +61,11 @@ const DEFAULT_STATE = {
     { id: 'task-bedding', title: '清洗床单、被套和浴巾', duration: 15, trigger: 'weather', energy: 'medium', lastDone: '', nextDue: '', custom: false }
   ],
   deferred: [],
+  todos: [
+    { id: 'todo-eggs', title: '提前把鸡蛋放进煮蛋器', duration: 3, done: false },
+    { id: 'todo-bag', title: '收拾明天的背包', duration: 5, done: false }
+  ],
+  laundry: { status: 'idle', startedAt: '', cycleMinutes: 45 },
   project: { currentStep: 0 },
   home: {
     dishState: 'not_triggered',
@@ -83,7 +91,6 @@ const DEFAULT_STATE = {
 
 const elements = {};
 let state = loadState();
-let deferredInstallPrompt = null;
 
 document.addEventListener('DOMContentLoaded', init);
 
@@ -95,23 +102,23 @@ function init() {
   hydrateControls();
   if (!state.today.plan.length) generateAndSavePlan(false);
   renderAll();
-  setupInstallExperience();
   registerServiceWorker();
 }
 
 function cacheElements() {
   [
-    'today-label', 'save-status', 'energy-select', 'special-select', 'meal-select', 'generate-plan',
+    'today-label', 'save-status', 'energy-select', 'dance-duration-select', 'overtime-duration-select',
+    'snack-duration-select', 'laundry-tonight-select', 'meal-select', 'generate-plan',
     'summary-chores', 'summary-free', 'summary-shower', 'plan-title', 'plan-note', 'plan-progress',
     'plan-list', 'weather-form', 'city-input', 'weather-source', 'weather-content', 'task-list',
+    'todo-form', 'todo-title', 'todo-list', 'laundry-panel',
     'task-form', 'task-name', 'task-duration', 'task-trigger', 'task-energy', 'project-progress',
     'project-progress-bar', 'project-next', 'project-meta', 'dish-state-buttons', 'dish-guidance',
     'item-search-form', 'item-search', 'item-search-result', 'area-list', 'inventory-list',
     'inventory-form', 'inventory-name', 'inventory-location', 'inventory-status', 'inventory-unopened',
     'purchase-form', 'purchase-name', 'purchase-amount', 'purchase-category', 'purchase-total',
     'purchase-list', 'review-checklist', 'review-remaining', 'export-data', 'import-data',
-    'show-install-help', 'reset-data', 'data-message', 'install-banner', 'install-button',
-    'dismiss-install', 'install-hint', 'install-dialog', 'offline-status'
+    'reset-data', 'data-message', 'offline-status'
   ].forEach(id => { elements[id] = document.getElementById(id); });
 }
 
@@ -126,6 +133,10 @@ function bindEvents() {
   elements['weather-content'].addEventListener('click', handleWeatherAction);
   elements['task-form'].addEventListener('submit', addTask);
   elements['task-list'].addEventListener('click', handleTaskAction);
+  elements['todo-form'].addEventListener('submit', addTodo);
+  elements['todo-list'].addEventListener('click', handleTodoAction);
+  elements['laundry-panel'].addEventListener('click', handleLaundryAction);
+  document.querySelectorAll('[data-todo-template]').forEach(button => button.addEventListener('click', () => addTodoFromTemplate(button.dataset.todoTemplate)));
   elements['project-next'].addEventListener('click', handleProjectAction);
   elements['dish-state-buttons'].addEventListener('click', handleDishState);
   elements['item-search-form'].addEventListener('submit', searchItemLocation);
@@ -135,17 +146,17 @@ function bindEvents() {
   elements['review-checklist'].addEventListener('change', handleReviewCheck);
   elements['export-data'].addEventListener('click', exportData);
   elements['import-data'].addEventListener('change', importData);
-  elements['show-install-help'].addEventListener('click', showInstallHelp);
   elements['reset-data'].addEventListener('click', resetData);
-  elements['dismiss-install'].addEventListener('click', () => { elements['install-banner'].hidden = true; });
-  elements['install-button'].addEventListener('click', installApp);
   window.addEventListener('online', renderConnectionStatus);
   window.addEventListener('offline', renderConnectionStatus);
 }
 
 function hydrateControls() {
   elements['energy-select'].value = state.today.energy;
-  elements['special-select'].value = state.today.special;
+  elements['dance-duration-select'].value = String(state.today.danceDuration || 0);
+  elements['overtime-duration-select'].value = String(state.today.overtimeDuration || 0);
+  elements['snack-duration-select'].value = String(state.today.snackDuration || 0);
+  elements['laundry-tonight-select'].value = state.today.laundryTonight ? 'yes' : 'no';
   elements['meal-select'].value = state.today.meal;
   const selectedMode = document.querySelector(`input[name="mode"][value="${state.today.mode}"]`);
   if (selectedMode) selectedMode.checked = true;
@@ -158,6 +169,8 @@ function renderAll() {
   renderPlan();
   renderWeather();
   renderTasks();
+  renderTodos();
+  renderLaundry();
   renderProject();
   renderDishStates();
   renderAreas();
@@ -180,7 +193,10 @@ function switchView(viewName) {
 
 function generateAndSavePlan(showMessage) {
   state.today.energy = elements['energy-select'].value;
-  state.today.special = elements['special-select'].value;
+  state.today.danceDuration = Number(elements['dance-duration-select'].value);
+  state.today.overtimeDuration = Number(elements['overtime-duration-select'].value);
+  state.today.snackDuration = Number(elements['snack-duration-select'].value);
+  state.today.laundryTonight = elements['laundry-tonight-select'].value === 'yes';
   state.today.meal = elements['meal-select'].value;
   state.today.mode = document.querySelector('input[name="mode"]:checked')?.value || 'balanced';
 
@@ -204,7 +220,8 @@ function buildPlan() {
   let cursor = 0;
   let choreMinutes = 0;
   const requestedBudget = MODE_BUDGETS[state.today.mode];
-  const maximumBudget = state.today.special === 'dance_overtime' ? 10 : state.today.special === 'overtime' ? 20 : requestedBudget;
+  const temporaryMinutes = state.today.danceDuration + state.today.overtimeDuration;
+  const maximumBudget = temporaryMinutes >= 150 ? 10 : state.today.overtimeDuration >= 90 || state.today.danceDuration >= 90 ? 20 : requestedBudget;
   const plannedBudget = Math.min(requestedBudget, maximumBudget);
 
   function add(id, title, duration, kind, detail, canDefer = false) {
@@ -213,12 +230,16 @@ function buildPlan() {
     if (kind === 'home') choreMinutes += duration;
   }
 
-  add('buffer', '回家缓冲', 10, 'routine', '换衣、喝水，不安排决策');
-  add('game', '23:00 前的游戏日常', 45, 'personal', '硬约束：22:55 前结束');
+  const laundryMinutes = state.today.laundryTonight ? 15 : 0;
+  if (state.today.laundryTonight) add('laundry-load', '洗衣阶段 1：放进洗衣机并启动', 5, 'home', '主动操作 5 分钟，洗衣机运行约 45 分钟');
+  add('buffer', state.today.laundryTonight ? '简短回家缓冲' : '回家缓冲', state.today.laundryTonight ? 5 : 10, 'routine', '换衣、喝水，不安排决策');
+  const snackDetail = state.today.snackDuration
+    ? `夜宵 ${state.today.snackDuration} 分钟与游戏并行，不额外占用时间`
+    : '硬约束：22:55 前结束';
+  add('game', state.today.snackDuration ? '23:00 前的游戏日常 + 夜宵' : '23:00 前的游戏日常', 45, 'personal', snackDetail);
+  if (state.today.laundryTonight) add('laundry-hang', '洗衣阶段 2：取出并晾晒', 10, 'home', '主动操作 10 分钟，游戏结束后立即处理');
 
-  if (state.today.special === 'dance' || state.today.special === 'dance_overtime') {
-    add('dance', '跳舞', 60, 'personal', '完成后再洗澡');
-  }
+  if (state.today.danceDuration) add('dance', '跳舞', state.today.danceDuration, 'personal', `${state.today.danceDuration} 分钟，完成后再洗澡`);
 
   let mealMinutes = 0;
   if (state.today.meal === 'dishes') {
@@ -229,7 +250,7 @@ function buildPlan() {
     add('meal-cleanup', '收拾做饭产生的碗筷和台面', 15, 'home', '完成碗筷、水槽和灶台最低清理');
   }
 
-  let remaining = Math.max(0, plannedBudget - mealMinutes);
+  let remaining = Math.max(0, plannedBudget - mealMinutes - laundryMinutes);
   const optionalTasks = [
     ['desk', '只整理书桌左侧 30 厘米', 10, '只分成保留、丢弃、暂存', true],
     ['sink', '厨房水槽与台面最低维护', 10, '只处理明显污渍', true],
@@ -245,18 +266,19 @@ function buildPlan() {
     }
   });
 
-  const danced = state.today.special.includes('dance');
+  const danced = state.today.danceDuration > 0;
   add('shower', '洗澡', 25, 'routine', choreMinutes || danced ? '家务或跳舞结束后洗澡' : '限时游戏结束后直接洗澡');
   add('skincare', '护肤', 10, 'routine', '洗澡后完成基础护肤');
 
-  if (state.today.special === 'overtime') add('overtime', '加班', 90, 'personal', '洗澡和护肤后开始，到点结束');
-  if (state.today.special === 'dance_overtime') add('overtime', '加班', 45, 'personal', '因为跳舞，今晚压缩到 45 分钟');
+  state.todos.filter(todo => !todo.done).forEach(todo => add(`todo-${todo.id}`, todo.title, todo.duration || 5, 'todo', '简单 Todo，完成标准明确', true));
+  if (state.today.overtimeDuration) add('overtime', '加班', state.today.overtimeDuration, 'personal', `洗澡和护肤后开始，计划 ${state.today.overtimeDuration} 分钟`);
 
   const freeMinutes = Math.max(0, 210 - cursor);
+  const overrunMinutes = Math.max(0, cursor - 210);
   if (freeMinutes) add('free', '自由活动与剩余游戏', freeMinutes, 'free', '只安排没有 23:00 限制的游戏、休息或其他事情');
   add('sleep', '睡前收尾并准备入睡', 30, 'routine', '目标 02:00 入睡');
 
-  return plan.map(item => ({ ...item, choreMinutes, freeMinutes, budgetCapped: plannedBudget < requestedBudget }));
+  return plan.map(item => ({ ...item, choreMinutes, freeMinutes, overrunMinutes, budgetCapped: plannedBudget < requestedBudget }));
 }
 
 function renderPlan() {
@@ -266,13 +288,14 @@ function renderPlan() {
   const shower = plan.find(item => item.baseId === 'shower');
   const actionable = plan.filter(item => item.kind !== 'free');
   const completed = actionable.filter(item => state.today.completedPlanIds.includes(item.id)).length;
-  const titleSuffix = first.budgetCapped ? '（已压缩）' : '';
+  const titleSuffix = first.overrunMinutes ? `（超出睡前 ${first.overrunMinutes} 分钟）` : first.budgetCapped ? '（已压缩额外家务）' : '';
 
   elements['summary-chores'].textContent = `${first.choreMinutes} 分钟`;
   elements['summary-free'].textContent = `${first.freeMinutes} 分钟`;
   elements['summary-shower'].textContent = shower?.time || '--:--';
   elements['plan-title'].textContent = `${MODE_LABELS[state.today.mode]}${titleSuffix}`;
-  elements['plan-note'].textContent = `限时游戏 22:55 前结束，${shower?.time || '之后'} 洗澡。`;
+  const snackNote = state.today.snackDuration ? `夜宵与游戏并行 ${state.today.snackDuration} 分钟，` : '';
+  elements['plan-note'].textContent = `${snackNote}限时游戏 22:55 前结束，${shower?.time || '之后'} 洗澡。`;
   elements['plan-progress'].textContent = `${completed} / ${actionable.length}`;
 
   elements['plan-list'].innerHTML = plan.map(item => {
@@ -296,14 +319,28 @@ function handlePlanAction(event) {
     if (index >= 0) {
       state.today.completedPlanIds.splice(index, 1);
       state.completionLog = state.completionLog.filter(log => !(log.date === todayKey() && log.planId === id));
+      if (item?.baseId.startsWith('todo-')) {
+        const todo = state.todos.find(entry => entry.id === item.baseId.slice(5));
+        if (todo) todo.done = false;
+      }
+      if (item?.baseId === 'laundry-load') state.laundry = { ...state.laundry, status: 'idle', startedAt: '' };
+      if (item?.baseId === 'laundry-hang') state.laundry.status = 'washing';
     } else {
       state.today.completedPlanIds.push(id);
       state.completionLog.push({ date: todayKey(), planId: id, title: item?.title || '', duration: item?.duration || 0, kind: item?.kind || '' });
       if (item?.baseId === 'meal-cleanup') state.home.dishState = 'drying';
+      if (item?.baseId.startsWith('todo-')) {
+        const todo = state.todos.find(entry => entry.id === item.baseId.slice(5));
+        if (todo) todo.done = true;
+      }
+      if (item?.baseId === 'laundry-load') state.laundry = { ...state.laundry, status: 'washing', startedAt: new Date().toISOString() };
+      if (item?.baseId === 'laundry-hang') state.laundry.status = 'done';
     }
     saveState();
     renderPlan();
     renderDishStates();
+    renderTodos();
+    renderLaundry();
   }
   if (deferButton) {
     const id = deferButton.dataset.planDefer;
@@ -327,8 +364,10 @@ function reflowPlan(plan) {
   let cursor = 0;
   const choreMinutes = plan.filter(item => item.kind === 'home').reduce((sum, item) => sum + item.duration, 0);
   const freeMinutes = plan.find(item => item.kind === 'free')?.duration || 0;
+  const activeUntilSleep = plan.filter(item => item.baseId !== 'sleep').reduce((sum, item) => sum + item.duration, 0);
+  const overrunMinutes = Math.max(0, activeUntilSleep - 210);
   return plan.map(item => {
-    const updated = { ...item, time: formatClock(cursor), choreMinutes, freeMinutes };
+    const updated = { ...item, time: formatClock(cursor), choreMinutes, freeMinutes, overrunMinutes };
     cursor += item.duration;
     return updated;
   });
@@ -414,6 +453,94 @@ function handleWeatherAction(event) {
   button.disabled = true;
   button.textContent = '已加入任务';
   flashSaveStatus('已加入洗涤任务');
+}
+
+function renderTodos() {
+  elements['todo-list'].innerHTML = state.todos.length
+    ? state.todos.map(todo => `<article class="list-row${todo.done ? ' done' : ''}"><div><div class="row-title">${escapeHtml(todo.title)}</div><div class="row-meta">约 ${todo.duration || 5} 分钟${todo.done ? ' · 已完成' : ' · 会进入下一次晚间计划'}</div></div><div class="row-actions"><button class="button" type="button" data-todo-toggle="${todo.id}">${todo.done ? '恢复' : '完成'}</button><button class="button" type="button" data-todo-delete="${todo.id}">删除</button></div></article>`).join('')
+    : '<p class="empty-state">还没有简单 Todo。</p>';
+}
+
+function addTodo(event) {
+  event.preventDefault();
+  addTodoFromTemplate(elements['todo-title'].value.trim());
+  event.target.reset();
+}
+
+function addTodoFromTemplate(title) {
+  if (!title) return;
+  const existing = state.todos.find(todo => todo.title === title);
+  if (existing) existing.done = false;
+  else state.todos.push({ id: uid('todo'), title, duration: 5, done: false });
+  saveState();
+  renderTodos();
+  flashSaveStatus('Todo 已保存');
+}
+
+function handleTodoAction(event) {
+  const toggleButton = event.target.closest('[data-todo-toggle]');
+  const deleteButton = event.target.closest('[data-todo-delete]');
+  if (toggleButton) {
+    const todo = state.todos.find(item => item.id === toggleButton.dataset.todoToggle);
+    if (todo) {
+      todo.done = !todo.done;
+      const planItem = state.today.plan.find(item => item.baseId === `todo-${todo.id}`);
+      if (planItem) {
+        if (todo.done && !state.today.completedPlanIds.includes(planItem.id)) state.today.completedPlanIds.push(planItem.id);
+        if (!todo.done) state.today.completedPlanIds = state.today.completedPlanIds.filter(id => id !== planItem.id);
+      }
+    }
+  }
+  if (deleteButton) {
+    const todoId = deleteButton.dataset.todoDelete;
+    state.todos = state.todos.filter(item => item.id !== todoId);
+    state.today.plan = reflowPlan(state.today.plan.filter(item => item.baseId !== `todo-${todoId}`));
+  }
+  saveState();
+  renderTodos();
+  renderPlan();
+}
+
+function renderLaundry() {
+  const status = state.laundry.status;
+  const readyAt = state.laundry.startedAt
+    ? new Date(new Date(state.laundry.startedAt).getTime() + state.laundry.cycleMinutes * 60000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : '';
+  const stage1Done = status === 'washing' || status === 'done';
+  const stage2Done = status === 'done';
+  const stage1Action = status === 'idle' ? '<button class="button primary" type="button" data-laundry-action="start">完成并启动</button>' : '';
+  const stage2Action = status === 'washing' ? '<button class="button primary" type="button" data-laundry-action="hang">完成晾晒</button>' : '';
+  const resetAction = status === 'done' ? '<button class="button" type="button" data-laundry-action="reset">开始新一轮</button>' : '';
+  elements['laundry-panel'].innerHTML = `
+    <div class="section-heading compact"><div><h2>洗衣服</h2><p>主动操作共 15 分钟，中间由洗衣机运行。</p></div><span class="status-chip">${status === 'idle' ? '未开始' : status === 'washing' ? `预计 ${readyAt} 可取出` : '本轮完成'}</span></div>
+    <div class="laundry-stages">
+      <div class="laundry-stage${stage1Done ? ' done' : ''}"><span class="stage-number">1</span><div><strong>放进洗衣机并启动</strong><div class="row-meta">约 5 分钟</div></div>${stage1Action}</div>
+      <div class="laundry-stage${stage2Done ? ' done' : ''}"><span class="stage-number">2</span><div><strong>取出并晾晒</strong><div class="row-meta">约 10 分钟</div></div>${stage2Action}</div>
+    </div>${resetAction}`;
+}
+
+function handleLaundryAction(event) {
+  const button = event.target.closest('[data-laundry-action]');
+  if (!button) return;
+  if (button.dataset.laundryAction === 'start') {
+    state.laundry.status = 'washing';
+    state.laundry.startedAt = new Date().toISOString();
+    markPlanItemComplete('laundry-load');
+  } else if (button.dataset.laundryAction === 'hang') {
+    state.laundry.status = 'done';
+    markPlanItemComplete('laundry-hang');
+  } else {
+    state.laundry.status = 'idle';
+    state.laundry.startedAt = '';
+  }
+  saveState();
+  renderLaundry();
+  renderPlan();
+}
+
+function markPlanItemComplete(baseId) {
+  const planItem = state.today.plan.find(item => item.baseId === baseId);
+  if (planItem && !state.today.completedPlanIds.includes(planItem.id)) state.today.completedPlanIds.push(planItem.id);
 }
 
 function renderTasks() {
@@ -651,45 +778,9 @@ function resetData() {
   elements['data-message'].textContent = '数据已重置。';
 }
 
-function setupInstallExperience() {
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-  if (isStandalone) return;
-  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  if (isIos) {
-    elements['install-banner'].hidden = false;
-    elements['install-hint'].textContent = '在 Safari 中点击“分享”→“添加到主屏幕”。';
-    elements['install-button'].textContent = '查看步骤';
-  }
-  window.addEventListener('beforeinstallprompt', event => {
-    event.preventDefault();
-    deferredInstallPrompt = event;
-    elements['install-banner'].hidden = false;
-  });
-  window.addEventListener('appinstalled', () => {
-    elements['install-banner'].hidden = true;
-    deferredInstallPrompt = null;
-  });
-}
-
-async function installApp() {
-  if (!deferredInstallPrompt) {
-    showInstallHelp();
-    return;
-  }
-  deferredInstallPrompt.prompt();
-  await deferredInstallPrompt.userChoice;
-  deferredInstallPrompt = null;
-  elements['install-banner'].hidden = true;
-}
-
-function showInstallHelp() {
-  if (typeof elements['install-dialog'].showModal === 'function') elements['install-dialog'].showModal();
-  else elements['data-message'].textContent = '请在 Safari 中点击“分享”，然后选择“添加到主屏幕”。';
-}
-
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) {
-    elements['offline-status'].textContent = '此浏览器不支持离线安装';
+    elements['offline-status'].textContent = '此浏览器不支持离线缓存';
     return;
   }
   try {
@@ -702,7 +793,7 @@ async function registerServiceWorker() {
 
 function renderConnectionStatus() {
   if (!navigator.onLine) elements['offline-status'].textContent = '当前离线 · 使用本机数据';
-  else if (!('serviceWorker' in navigator)) elements['offline-status'].textContent = '在线 · 不支持离线安装';
+  else if (!('serviceWorker' in navigator)) elements['offline-status'].textContent = '在线 · 不支持离线缓存';
 }
 
 function saveState() {
@@ -722,18 +813,41 @@ function loadState() {
 
 function mergeWithDefaults(saved) {
   const merged = structuredClone(DEFAULT_STATE);
+  const previousVersion = Number(saved.version || 1);
   Object.assign(merged, saved);
   merged.settings = { ...merged.settings, ...(saved.settings || {}) };
   merged.today = { ...merged.today, ...(saved.today || {}) };
   merged.home = { ...merged.home, ...(saved.home || {}), itemLocations: { ...merged.home.itemLocations, ...(saved.home?.itemLocations || {}) } };
+  merged.laundry = { ...DEFAULT_STATE.laundry, ...(saved.laundry || {}) };
   merged.review = { ...merged.review, ...(saved.review || {}) };
+  if (!Array.isArray(merged.todos)) merged.todos = structuredClone(DEFAULT_STATE.todos);
+  if (previousVersion < 2) {
+    const legacySpecial = saved.today?.special || 'none';
+    merged.today.danceDuration = legacySpecial === 'dance' || legacySpecial === 'dance_overtime' ? 60 : 0;
+    merged.today.overtimeDuration = legacySpecial === 'overtime' ? 90 : legacySpecial === 'dance_overtime' ? 45 : 0;
+    merged.today.snackDuration = 0;
+    merged.today.laundryTonight = false;
+    merged.today.plan = [];
+    merged.today.completedPlanIds = [];
+  }
+  merged.version = APP_VERSION;
   return merged;
 }
 
 function resetDailyStateIfNeeded() {
   const today = todayKey();
   if (state.today.date === today) return;
-  state.today = { ...state.today, date: today, plan: [], completedPlanIds: [], meal: 'none' };
+  state.today = {
+    ...state.today,
+    date: today,
+    plan: [],
+    completedPlanIds: [],
+    meal: 'none',
+    danceDuration: 0,
+    overtimeDuration: 0,
+    snackDuration: 0,
+    laundryTonight: false
+  };
   state.home.dishState = 'not_triggered';
   saveState();
 }

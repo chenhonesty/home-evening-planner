@@ -70,21 +70,12 @@ p { margin-bottom: 0; }
   font-size: 0.78rem;
 }
 
-.install-banner, .panel, .summary-card, .area-card {
+.panel, .summary-card, .area-card {
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--surface);
   box-shadow: var(--shadow);
 }
-
-.install-banner {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px;
-  margin-bottom: 14px;
-}
-.install-banner p { margin-top: 4px; color: var(--muted); font-size: 0.85rem; }
 
 .main-nav {
   display: grid;
@@ -192,6 +183,7 @@ input:focus, select:focus, button:focus-visible, summary:focus-visible { outline
 .time { color: var(--muted); font-variant-numeric: tabular-nums; }
 .plan-row { grid-template-columns: 54px minmax(0, 1fr) auto; }
 .plan-row.done .row-title { color: var(--muted); text-decoration: line-through; }
+.list-row.done .row-title { color: var(--muted); text-decoration: line-through; }
 .plan-row.free { border-left: 3px solid var(--primary); padding-left: 10px; }
 
 .inline-form { display: flex; align-items: end; gap: 8px; }
@@ -207,6 +199,12 @@ input:focus, select:focus, button:focus-visible, summary:focus-visible { outline
 .form-panel summary { cursor: pointer; font-weight: 600; }
 .form-panel[open] summary { margin-bottom: 14px; }
 .form-grid .button { align-self: end; }
+.quick-todos { display: flex; gap: 7px; flex-wrap: wrap; margin: 10px 0 6px; }
+.laundry-stages { display: grid; gap: 8px; margin-top: 10px; }
+.laundry-stage { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.laundry-stage:last-child { border-bottom: 0; }
+.stage-number { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: var(--muted); background: var(--surface-soft); }
+.laundry-stage.done .stage-number { color: var(--primary-text); background: var(--primary); }
 .progress-track { height: 9px; overflow: hidden; border-radius: 99px; background: var(--surface-soft); }
 .progress-track span { display: block; width: 0; height: 100%; background: var(--primary); transition: width 180ms ease; }
 .project-next { margin-top: 12px; }
@@ -226,12 +224,6 @@ input:focus, select:focus, button:focus-visible, summary:focus-visible { outline
 .check-row.done span { color: var(--muted); text-decoration: line-through; }
 
 .app-footer { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 0.76rem; }
-
-dialog { width: min(92vw, 460px); border: 1px solid var(--border); border-radius: 16px; color: var(--text); background: var(--surface); box-shadow: var(--shadow); }
-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
-dialog ol { padding-left: 1.3rem; color: var(--muted); }
-dialog li { margin: 9px 0; }
-dialog p { margin: 12px 0; color: var(--muted); }
 
 @media (max-width: 600px) {
   .app-header { align-items: flex-start; }
@@ -253,7 +245,8 @@ dialog p { margin: 12px 0; color: var(--muted); }
   .main-nav { gap: 2px; padding: 4px; }
   .summary-grid { grid-template-columns: 1fr; }
   .area-grid, .button-grid { grid-template-columns: 1fr; }
-  .install-banner { flex-direction: column; }
+  .laundry-stage { grid-template-columns: auto minmax(0, 1fr); }
+  .laundry-stage .button { grid-column: 2; }
 }
 
 @media (prefers-reduced-motion: reduce) {
